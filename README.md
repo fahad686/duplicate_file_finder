@@ -1,109 +1,145 @@
 # Duplicate File Finder
 
-A Flutter Android app that scans for duplicate files using MD5 hash comparison, helping you reclaim storage space.
+<p align="center">
+  <img src="assets/app_icon.png" width="96" height="96" alt="App Icon" />
+</p>
 
-## Features
+<p align="center">
+  A modern, high-performance Flutter Android app that scans and detects duplicate files using chunked MD5 hash comparison, identifies large and unused files, and helps you reclaim valuable device storage.
+</p>
 
-- **Fast Scanning** — Size filter first, then chunked MD5 hashing
-- **Large Files** — List the biggest files so you can reclaim space
-- **Unused Files** — Find files not opened or changed in months
-- **File Thumbnails** — Image previews for photos, type icons for other files
-- **2x2 Filter Grid** — Filter results by Images, Videos, Audio, or Documents
-- **Batch Selection** — Keeps the newest file; selects older duplicates
-- **Multimedia Player** — Built-in viewer for images, videos, and audio files
-- **File Details** — Name, size, path, hash, modification date
-- **Delete Confirmation** — Safety dialog before removing files
-- **Dark Theme** — Modern dark UI with blue accent colors
+<p align="center">
+  <img src="https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" />
+  <img src="https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android" />
+  <img src="https://img.shields.io/badge/Material%203-Dark%20Theme-blue?style=for-the-badge" alt="Material 3" />
+</p>
 
-## Tech Stack
+---
+
+## 📱 Screenshots
+
+| Dashboard | Scan in Progress | Scan Results | Large Files Cleaner |
+| :---: | :---: | :---: | :---: |
+| <img src="screenshots/home_screen.jpg" width="220" alt="Home Dashboard" /> | <img src="screenshots/scanning_screen.jpg" width="220" alt="Scanning Progress" /> | <img src="screenshots/results_screen.jpg" width="220" alt="Scan Results" /> | <img src="screenshots/large_files.jpg" width="220" alt="Large Files" /> |
+
+---
+
+## ✨ Features
+
+- ⚡ **Lightning Fast Duplicate Scanning** — Pre-filters files by size first to eliminate unique sizes immediately, followed by memory-efficient chunked MD5 hashing.
+- 📦 **Large Files Manager** — Locate the biggest files taking up your storage (4K videos, archives, disk images) and clean them in bulk.
+- ⏳ **Unused Files Finder** — Discover old files and media that haven't been accessed or modified in months.
+- 🗂️ **2x2 Category Filter Grid** — Instant filtering across **Images**, **Videos**, **Audio**, and **Documents** with dynamic counts and badges.
+- 🎯 **Smart Auto-Selection** — Automatically preserves the original/newest file while pre-selecting extra duplicates for one-tap deletion.
+- 🖼️ **In-App Media Player & Previews** — Built-in viewers for images, videos (`video_player`), and audio tracks (`just_audio`) before taking any destructive action.
+- 🔍 **File Inspection** — Deep details including absolute path, file size, last modified timestamp, and exact MD5 checksum.
+- 🛡️ **Safe & Confirmed Deletion** — Safeguard confirmation modal showing the exact number of files and freed storage space before deletion.
+- 🌙 **Modern Dark Theme** — Sleek dark UI with vibrant blue accents, smooth card animations, and responsive layout.
+
+---
+
+## 🛠️ Tech Stack
 
 | Package | Purpose |
-|---------|---------|
-| `permission_handler` | Android storage / all-files-access permissions |
-| `crypto` | Chunked MD5 file hashing |
-| `shared_preferences` | Persist scan settings |
-| `video_player` | In-app video playback |
-| `just_audio` | In-app audio playback |
-| `open_file` | Open files in external apps |
-| `intl` | Date formatting |
-| `path` | File path utilities |
+|---|---|
+| `crypto` | Chunked MD5 file hashing engine |
+| `permission_handler` | Android storage & All-Files-Access (`MANAGE_EXTERNAL_STORAGE`) |
+| `shared_preferences` | Persistent scan preferences and thresholds |
+| `video_player` | Native in-app video playback |
+| `just_audio` | In-app audio player for previewing duplicate sound files |
+| `open_file` | Opening files in external system viewers |
+| `intl` | Timestamp and date formatting |
+| `path` | Cross-platform file path resolution and utilities |
 
-## Project Structure
+---
+
+## 📁 Project Structure
 
 ```
 lib/
 ├── main.dart
 ├── models/
-│   ├── duplicate_file.dart          # DuplicateFile & DuplicateGroup
-│   └── file_types.dart              # Shared extension lists
+│   ├── duplicate_file.dart          # DuplicateFile & DuplicateGroup models
+│   ├── file_types.dart              # Supported file extension categories
+│   └── scan_mode.dart               # Scan modes (duplicates, large files, unused files)
 ├── services/
-│   ├── app_settings.dart            # Persisted scan preferences
-│   └── file_scanner_service.dart    # File scanning & hashing engine
+│   ├── app_settings.dart            # SharedPreferences configuration service
+│   └── file_scanner_service.dart    # High-performance scanning & MD5 hashing engine
 ├── screens/
-│   ├── home_screen.dart             # Dashboard with scan button
-│   ├── scanning_screen.dart         # Cancelable scan progress
-│   ├── results_screen.dart          # Filtered duplicate groups list
-│   ├── file_detail_screen.dart      # File info & actions
-│   ├── media_player_screen.dart     # Custom multimedia player
-│   └── settings_screen.dart         # Scan preferences
+│   ├── home_screen.dart             # Main dashboard & mode selector
+│   ├── scanning_screen.dart         # Real-time scan progress & live path indicator
+│   ├── results_screen.dart          # Grouped duplicates review & batch delete
+│   ├── file_list_screen.dart        # Large files and unused files management
+│   ├── file_detail_screen.dart      # File metadata, preview, and MD5 inspector
+│   ├── media_player_screen.dart     # Dedicated in-app media player
+│   └── settings_screen.dart         # Configurable scan criteria and thresholds
+├── utils/
 └── widgets/
-    └── duplicate_group_card.dart    # Expandable group with thumbnails
+    └── duplicate_group_card.dart    # Expandable duplicate group card with thumbnails
 ```
 
-## Getting Started
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Flutter SDK (version `^3.11.5` or higher)
+- Android SDK / Android Studio (Targeting Android 11+ / API 30+)
+
+### Installation & Run
 
 ```bash
+# Clone repository
+git clone https://github.com/your-username/duplicate_file_finder.git
+cd duplicate_file_finder
+
+# Install dependencies
 flutter pub get
+
+# Run on connected Android device / emulator
 flutter run
 ```
 
-## Permissions (Android)
+---
 
-Play strategy: **keep All files access**. This app finds duplicate documents and archives, not only media, so MediaStore / `READ_MEDIA_*` is not enough.
+## 🔒 Permissions (Android)
 
-| Android version | Permission |
-|-----------------|------------|
-| 11+ (API 30+) | `MANAGE_EXTERNAL_STORAGE` ("All files access") |
-| 10 (API 29) | `READ_EXTERNAL_STORAGE` + `requestLegacyExternalStorage` |
-| 9 and below | `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` |
+This application requires **All files access** (`MANAGE_EXTERNAL_STORAGE`) because it scans and cleans duplicate documents, archives, and system files across shared storage, which cannot be accessed via standard media store permissions alone.
 
-### Play Console declaration
+| Android Version | Permission Required | Description |
+|---|---|---|
+| **Android 11+ (API 30+)** | `MANAGE_EXTERNAL_STORAGE` | Full shared storage access to scan all file types |
+| **Android 10 (API 29)** | `READ_EXTERNAL_STORAGE` + `requestLegacyExternalStorage` | Legacy external storage read/write |
+| **Android 9 & below** | `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` | Standard storage permissions |
 
-When uploading to Google Play, complete the **All files access** declaration:
+---
 
-- App type: file manager / storage tool
-- Core feature: find and delete duplicate user files across shared storage
-- Video demo: scan → review duplicates → delete extras
+## ⚙️ How It Works
 
-Do not use the `com.example.*` application ID. Current ID: `com.duplicatefilefinder.app` (change this to your Play account namespace before shipping).
+1. **Select Mode**: Choose between **Scan Duplicates**, **Large Files**, or **Unused Files**.
+2. **Size Grouping**: The scanner indexes storage (`/storage/emulated/0`), ignoring system caches (`Android/data`, `Android/obb`), and groups files matching identical byte sizes.
+3. **MD5 Hashing**: Only candidate files with matching byte sizes undergo chunked MD5 checksum calculation, maximizing scan speed and saving CPU/battery.
+4. **Review & Batch Select**: Files with identical hashes are grouped together. The newest original copy is protected, and duplicate copies are selected.
+5. **Delete & Reclaim**: Review thumbnails, play media previews, and safely delete duplicates with real-time freed storage feedback.
 
-## How It Works
+---
 
-1. Tap **Scan Now** on the home screen
-2. Grant storage / all-files-access when prompted
-3. App scans `/storage/emulated/0`, skipping `Android/data` and `Android/obb`
-4. Settings control file types, minimum size, and auto-select oldest
-5. Same-size files are grouped, then MD5-hashed in chunks
-6. Groups keep the newest file first; older copies can be deleted
+## 📦 Build APK
 
-## Release signing
-
-1. Create a keystore (once):
-
-```bash
-keytool -genkey -v -keystore android/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
-```
-
-2. Copy `android/key.properties.example` to `android/key.properties` and fill in the passwords and alias.
-
-`key.properties` and `*.jks` are gitignored. Release builds use the upload keystore when `key.properties` exists; otherwise they fall back to the debug key (dev only).
-
-## Build APK
+To build a release APK for Android:
 
 ```bash
 flutter build apk --release
 ```
 
-## Version
+The compiled release APK will be located at:
+```
+build/app/outputs/flutter-apk/app-release.apk
+```
 
-1.0.0+1
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
