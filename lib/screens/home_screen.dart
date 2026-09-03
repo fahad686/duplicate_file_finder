@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../models/scan_mode.dart';
 import 'scanning_screen.dart';
 import 'settings_screen.dart';
 
@@ -15,9 +16,20 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool _isCheckingPermissions = false;
+  ScanMode? _busyMode;
+  ScanMode _pendingMode = ScanMode.duplicates;
 
-  static const _channel = MethodChannel('com.example.filefinder/permissions');
+  static const _channel = MethodChannel(
+    'com.duplicatefilefinder.app/permissions',
+  );
+
+  Future<int> _androidSdkInt() async {
+    try {
+      return await _channel.invokeMethod<int>('getSdkInt') ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
 
   Future<void> _openAllFilesAccessSettings() async {
     if (Platform.isAndroid) {
@@ -29,45 +41,56 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _startScan() async {
-    setState(() => _isCheckingPermissions = true);
+  Future<void> _startScan(ScanMode mode) async {
+    _pendingMode = mode;
+    setState(() => _busyMode = mode);
 
     final hasPermission = await _requestPermissions();
 
     if (!hasPermission) {
       if (mounted) {
-        setState(() => _isCheckingPermissions = false);
-        _showPermissionDialog();
+        setState(() => _busyMode = null);
+        await _showPermissionDialog();
       }
       return;
     }
 
     if (mounted) {
-      setState(() => _isCheckingPermissions = false);
+      setState(() => _busyMode = null);
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const ScanningScreen()),
+        MaterialPageRoute(builder: (_) => ScanningScreen(mode: mode)),
       );
     }
   }
 
   Future<bool> _requestPermissions() async {
-    if (Platform.isAndroid) {
-      if (await Permission.manageExternalStorage.isGranted) return true;
-      if (await Permission.manageExternalStorage.request().isGranted) {
-        return true;
-      }
-      return false;
+    if (!Platform.isAndroid) {
+      final status = await Permission.storage.request();
+      return status.isGranted;
     }
+
+    final sdk = await _androidSdkInt();
+
+    if (sdk >= 30) {
+      if (await Permission.manageExternalStorage.isGranted) return true;
+      final status = await Permission.manageExternalStorage.request();
+      return status.isGranted;
+    }
+
     final status = await Permission.storage.request();
     return status.isGranted;
   }
 
-  void _showPermissionDialog() {
+  Future<void> _showPermissionDialog() async {
+    final sdk = Platform.isAndroid ? await _androidSdkInt() : 0;
+    final needsAllFiles = sdk >= 30;
+    if (!mounted) return;
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1A2538),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
@@ -75,8 +98,11 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         content: Text(
-          'This app needs "All files access" permission to scan for duplicate files.\n\n'
-          'Tap "Open Settings" and enable "All files access" for this app.',
+          needsAllFiles
+              ? 'This app needs "All files access" to find duplicate documents, photos, videos, and archives.\n\n'
+                  'Tap "Open Settings" and enable "All files access" for this app.'
+              : 'This app needs storage permission to scan for duplicate files.\n\n'
+                  'Tap "Open Settings" and allow storage access.',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.7),
             fontSize: 14,
@@ -85,7 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: Text(
               'Cancel',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
@@ -93,16 +119,27 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(context);
-              await _openAllFilesAccessSettings();
-              await Future.delayed(const Duration(seconds: 2));
-              if (await Permission.manageExternalStorage.isGranted &&
-                  mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ScanningScreen()),
-                );
+              Navigator.pop(dialogContext);
+              if (Platform.isAndroid) {
+                final sdk = await _androidSdkInt();
+                if (sdk >= 30) {
+                  await _openAllFilesAccessSettings();
+                } else {
+                  await openAppSettings();
+                }
+              } else {
+                await openAppSettings();
               }
+              await Future.delayed(const Duration(seconds: 2));
+              if (!mounted) return;
+              final granted = await _requestPermissions();
+              if (!mounted || !granted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ScanningScreen(mode: _pendingMode),
+                ),
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF4A9EFF),
@@ -135,6 +172,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildTopBar(),
                     const SizedBox(height: 40),
                     _buildMainScanArea(size),
+                    const SizedBox(height: 20),
+                    _buildToolCards(),
                     const SizedBox(height: 36),
                     _buildInfoCards(),
                   ],
@@ -201,7 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildMainScanArea(Size size) {
     return GestureDetector(
-      onTap: _isCheckingPermissions ? null : _startScan,
+      onTap: _busyMode != null ? null : () => _startScan(ScanMode.duplicates),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
@@ -229,7 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: Colors.white.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
-              child: _isCheckingPermissions
+              child: _busyMode == ScanMode.duplicates
                   ? const Padding(
                       padding: EdgeInsets.all(18),
                       child: CircularProgressIndicator(
@@ -281,6 +320,107 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolCards() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'More tools',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: _buildToolCard(
+                mode: ScanMode.largeFiles,
+                title: 'Large Files',
+                desc: 'Biggest files using the most storage',
+                icon: Icons.sd_storage_rounded,
+                color: const Color(0xFFF59E0B),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildToolCard(
+                mode: ScanMode.unusedFiles,
+                title: 'Unused Files',
+                desc: 'Old files you have not opened in months',
+                icon: Icons.history_rounded,
+                color: const Color(0xFF14B8A6),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildToolCard({
+    required ScanMode mode,
+    required String title,
+    required String desc,
+    required IconData icon,
+    required Color color,
+  }) {
+    final busy = _busyMode == mode;
+    return GestureDetector(
+      onTap: _busyMode != null ? null : () => _startScan(mode),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF131B2A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: busy
+                  ? Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: color,
+                      ),
+                    )
+                  : Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              desc,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF6B7A94),
+                height: 1.3,
               ),
             ),
           ],

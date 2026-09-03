@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import '../models/scan_mode.dart';
+import '../services/app_settings.dart';
 import '../services/file_scanner_service.dart';
+import 'file_list_screen.dart';
 import 'results_screen.dart';
 
 class ScanningScreen extends StatefulWidget {
-  const ScanningScreen({super.key});
+  final ScanMode mode;
+
+  const ScanningScreen({super.key, this.mode = ScanMode.duplicates});
 
   @override
   State<ScanningScreen> createState() => _ScanningScreenState();
@@ -14,6 +18,7 @@ class ScanningScreen extends StatefulWidget {
 class _ScanningScreenState extends State<ScanningScreen>
     with SingleTickerProviderStateMixin {
   final FileScannerService _scanner = FileScannerService();
+  final SettingsService _settingsService = SettingsService();
   late AnimationController _controller;
   late Animation<double> _pulseAnimation;
 
@@ -21,6 +26,7 @@ class _ScanningScreenState extends State<ScanningScreen>
   int _duplicatesFound = 0;
   String _currentPath = '';
   bool _isScanning = true;
+  bool _autoSelectOldest = true;
 
   @override
   void initState() {
@@ -39,12 +45,25 @@ class _ScanningScreenState extends State<ScanningScreen>
 
   @override
   void dispose() {
+    _scanner.cancel();
     _controller.dispose();
     _scanner.dispose();
     super.dispose();
   }
 
   Future<void> _startScan() async {
+    final settings = await _settingsService.load();
+    _autoSelectOldest = settings.autoSelectOldest;
+
+    final minSize = widget.mode == ScanMode.largeFiles
+        ? settings.largeFileMinSize
+        : settings.minFileSize;
+
+    _scanner.configure(
+      fileExtensions: settings.fileExtensions,
+      minFileSize: minSize,
+    );
+
     _scanner.progressStream.listen((progress) {
       if (mounted) {
         setState(() {
@@ -56,30 +75,69 @@ class _ScanningScreenState extends State<ScanningScreen>
     });
 
     try {
-      final duplicates = await _scanner.scanDirectories([
-        '/storage/emulated/0/Download',
-        '/storage/emulated/0/Documents',
-        '/storage/emulated/0/Pictures',
-        '/storage/emulated/0/DCIM',
-      ]);
+      final roots = [FileScannerService.androidScanRoot];
 
-      if (mounted) {
+      if (widget.mode == ScanMode.largeFiles) {
+        final files = await _scanner.scanLargeFiles(roots);
+        if (!mounted || _scanner.isCancelled) return;
         setState(() => _isScanning = false);
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => ResultsScreen(duplicateGroups: duplicates),
+            builder: (_) => FileListScreen(
+              mode: ScanMode.largeFiles,
+              files: files,
+            ),
           ),
         );
+        return;
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isScanning = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scan error: $e')),
+
+      if (widget.mode == ScanMode.unusedFiles) {
+        final files = await _scanner.scanUnusedFiles(
+          roots,
+          unusedDays: settings.unusedDays,
         );
+        if (!mounted || _scanner.isCancelled) return;
+        setState(() => _isScanning = false);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => FileListScreen(
+              mode: ScanMode.unusedFiles,
+              files: files,
+            ),
+          ),
+        );
+        return;
       }
+
+      final duplicates = await _scanner.scanDirectories(roots);
+
+      if (!mounted || _scanner.isCancelled) return;
+
+      setState(() => _isScanning = false);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ResultsScreen(
+            duplicateGroups: duplicates,
+            autoSelectOldest: _autoSelectOldest,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted || _scanner.isCancelled) return;
+      setState(() => _isScanning = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Scan error: $e')),
+      );
     }
+  }
+
+  void _cancelScan() {
+    _scanner.cancel();
+    Navigator.pop(context);
   }
 
   @override
@@ -96,15 +154,15 @@ class _ScanningScreenState extends State<ScanningScreen>
               child: Row(
                 children: [
                   IconButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: _cancelScan,
                     icon: const Icon(
                       Icons.arrow_back_ios_rounded,
                       color: Colors.white,
                     ),
                   ),
-                  const Text(
-                    'Scanning',
-                    style: TextStyle(
+                  Text(
+                    widget.mode.title,
+                    style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
@@ -163,7 +221,7 @@ class _ScanningScreenState extends State<ScanningScreen>
                     ),
                     SizedBox(height: size.height * 0.03),
                     Text(
-                      'Scanning Files...',
+                      _isScanning ? widget.mode.progressTitle : 'Finishing...',
                       style: TextStyle(
                         fontSize: size.width * 0.055,
                         fontWeight: FontWeight.bold,
@@ -172,7 +230,7 @@ class _ScanningScreenState extends State<ScanningScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Looking for duplicate files',
+                      widget.mode.progressSubtitle,
                       style: TextStyle(
                         fontSize: size.width * 0.035,
                         color: Colors.white.withValues(alpha: 0.6),
@@ -182,7 +240,7 @@ class _ScanningScreenState extends State<ScanningScreen>
                     _buildStatRow('Files Scanned', _filesScanned.toString()),
                     const SizedBox(height: 16),
                     _buildStatRow(
-                      'Duplicates Found',
+                      widget.mode.matchLabel,
                       _duplicatesFound.toString(),
                     ),
                     const SizedBox(height: 16),
@@ -201,7 +259,7 @@ class _ScanningScreenState extends State<ScanningScreen>
                       width: double.infinity,
                       height: 52,
                       child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: _cancelScan,
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white,
                           side: BorderSide(

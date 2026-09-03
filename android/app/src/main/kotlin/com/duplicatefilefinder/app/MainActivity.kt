@@ -1,4 +1,4 @@
-package com.example.duplicate_file_finder
+package com.duplicatefilefinder.app
 
 import android.content.Intent
 import android.net.Uri
@@ -9,18 +9,20 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.example.filefinder/permissions"
+    private val channelName = "com.duplicatefilefinder.app/permissions"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
-                if (call.method == "openAllFilesAccessSettings") {
-                    openAllFilesAccessSettings()
-                    result.success(true)
-                } else {
-                    result.notImplemented()
+                when (call.method) {
+                    "openAllFilesAccessSettings" -> {
+                        openAllFilesAccessSettings()
+                        result.success(true)
+                    }
+                    "getSdkInt" -> result.success(Build.VERSION.SDK_INT)
+                    else -> result.notImplemented()
                 }
             }
     }

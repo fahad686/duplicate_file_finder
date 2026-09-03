@@ -5,18 +5,22 @@ import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/duplicate_file.dart';
+import '../models/file_types.dart';
 import '../screens/file_detail_screen.dart';
+import '../screens/media_player_screen.dart';
 
 class DuplicateGroupCard extends StatefulWidget {
   final DuplicateGroup group;
   final int groupIndex;
   final Function(bool) onSelectAll;
+  final VoidCallback onSelectionChanged;
 
   const DuplicateGroupCard({
     super.key,
     required this.group,
     required this.groupIndex,
     required this.onSelectAll,
+    required this.onSelectionChanged,
   });
 
   @override
@@ -87,7 +91,7 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
             TextButton(
               onPressed: () {
                 widget.onSelectAll(true);
-                setState(() {});
+                widget.onSelectionChanged();
               },
               child: const Text('Select Dupes', style: TextStyle(fontSize: 12)),
             ),
@@ -113,7 +117,7 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
           width: 48,
           height: 48,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _buildFallbackIcon(firstFile),
+          errorBuilder: (_, _, _) => _buildFallbackIcon(firstFile),
         ),
       );
     }
@@ -136,7 +140,6 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
     final selectedCount =
         widget.group.files.where((f) => f.isSelected).length;
     final extension = widget.group.files.first.extension;
-    final folder = p.dirname(widget.group.files.first.path);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
@@ -209,6 +212,7 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
               setState(() {
                 file.isSelected = value ?? false;
               });
+              widget.onSelectionChanged();
             },
             activeColor: const Color(0xFFEF4444),
             checkColor: Colors.white,
@@ -263,8 +267,16 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
           ),
           GestureDetector(
             onTap: () async {
-              final result = await OpenFile.open(file.path);
-              if (context.mounted && result.type != ResultType.done) {
+              if (file.isImage || file.isVideo || file.isAudio) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MediaPlayerScreen(file: file),
+                  ),
+                );
+              } else {
+                final result = await OpenFile.open(file.path);
+                if (!mounted || result.type == ResultType.done) return;
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -315,7 +327,7 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
             width: 42,
             height: 42,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _buildSmallFallback(file),
+            errorBuilder: (_, _, _) => _buildSmallFallback(file),
           ),
         ),
       );
@@ -340,35 +352,22 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
 
   Color _getFileTypeColor() {
     final ext = widget.group.files.first.extension.toLowerCase();
-    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].contains(ext)) {
-      return const Color(0xFF3B82F6);
-    }
-    if (['.mp4', '.avi', '.mkv', '.mov'].contains(ext)) {
-      return const Color(0xFF8B5CF6);
-    }
-    if (['.mp3', '.wav', '.flac', '.aac'].contains(ext)) {
-      return const Color(0xFFF59E0B);
-    }
+    if (FileTypes.images.contains(ext)) return const Color(0xFF3B82F6);
+    if (FileTypes.videos.contains(ext)) return const Color(0xFF8B5CF6);
+    if (FileTypes.audio.contains(ext)) return const Color(0xFFF59E0B);
     if (ext == '.pdf') return const Color(0xFFEF4444);
-    if (['.zip', '.rar', '.7z'].contains(ext)) {
-      return const Color(0xFFF59E0B);
-    }
+    if (FileTypes.archives.contains(ext)) return const Color(0xFFF59E0B);
+    if (FileTypes.documents.contains(ext)) return const Color(0xFF10B981);
     return const Color(0xFF6B7A94);
   }
 
   IconData _getFileTypeIcon() {
     final ext = widget.group.files.first.extension.toLowerCase();
-    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].contains(ext)) {
-      return Icons.image_rounded;
-    }
-    if (['.mp4', '.avi', '.mkv', '.mov'].contains(ext)) {
-      return Icons.videocam_rounded;
-    }
-    if (['.mp3', '.wav', '.flac', '.aac'].contains(ext)) {
-      return Icons.audiotrack_rounded;
-    }
+    if (FileTypes.images.contains(ext)) return Icons.image_rounded;
+    if (FileTypes.videos.contains(ext)) return Icons.videocam_rounded;
+    if (FileTypes.audio.contains(ext)) return Icons.audiotrack_rounded;
     if (ext == '.pdf') return Icons.picture_as_pdf_rounded;
-    if (['.zip', '.rar', '.7z'].contains(ext)) return Icons.folder_zip_rounded;
+    if (FileTypes.archives.contains(ext)) return Icons.folder_zip_rounded;
     return Icons.insert_drive_file_rounded;
   }
 }

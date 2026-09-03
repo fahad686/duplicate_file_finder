@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-// import '../widgets/bottom_banner_ad.dart';
+import '../services/app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -10,13 +10,29 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  bool _scanImages = true;
-  bool _scanVideos = true;
-  bool _scanAudio = true;
-  bool _scanDocuments = true;
-  bool _scanArchives = true;
-  int _minFileSize = 0;
-  bool _autoSelectOldest = true;
+  final SettingsService _settingsService = SettingsService();
+  AppSettings _settings = const AppSettings();
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final settings = await _settingsService.load();
+    if (!mounted) return;
+    setState(() {
+      _settings = settings;
+      _loaded = true;
+    });
+  }
+
+  Future<void> _update(AppSettings settings) async {
+    setState(() => _settings = settings);
+    await _settingsService.save(settings);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,31 +43,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _buildHeader(),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildSectionTitle('File Types to Scan'),
-                    const SizedBox(height: 12),
-                    _buildFileTypeToggles(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('Scan Options'),
-                    const SizedBox(height: 12),
-                    _buildScanOptions(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('Auto-Selection'),
-                    const SizedBox(height: 12),
-                    _buildAutoSelection(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('About'),
-                    const SizedBox(height: 12),
-                    _buildAbout(),
-                  ],
-                ),
-              ),
+              child: !_loaded
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF4A9EFF),
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionTitle('File Types to Scan'),
+                          const SizedBox(height: 12),
+                          _buildFileTypeToggles(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('Scan Options'),
+                          const SizedBox(height: 12),
+                          _buildScanOptions(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('Large Files'),
+                          const SizedBox(height: 12),
+                          _buildLargeFileOptions(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('Unused Files'),
+                          const SizedBox(height: 12),
+                          _buildUnusedOptions(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('Auto-Selection'),
+                          const SizedBox(height: 12),
+                          _buildAutoSelection(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('About'),
+                          const SizedBox(height: 12),
+                          _buildAbout(),
+                        ],
+                      ),
+                    ),
             ),
-            // const BottomBannerAd(),
           ],
         ),
       ),
@@ -106,8 +135,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'JPG, PNG, GIF, WEBP',
             Icons.image_rounded,
             Colors.blue,
-            _scanImages,
-            (value) => setState(() => _scanImages = value),
+            _settings.scanImages,
+            (value) => _update(_settings.copyWith(scanImages: value)),
           ),
           _buildDivider(),
           _buildToggleTile(
@@ -115,8 +144,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'MP4, AVI, MKV, MOV',
             Icons.videocam_rounded,
             Colors.purple,
-            _scanVideos,
-            (value) => setState(() => _scanVideos = value),
+            _settings.scanVideos,
+            (value) => _update(_settings.copyWith(scanVideos: value)),
           ),
           _buildDivider(),
           _buildToggleTile(
@@ -124,8 +153,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'MP3, WAV, FLAC, AAC',
             Icons.audio_file_rounded,
             Colors.orange,
-            _scanAudio,
-            (value) => setState(() => _scanAudio = value),
+            _settings.scanAudio,
+            (value) => _update(_settings.copyWith(scanAudio: value)),
           ),
           _buildDivider(),
           _buildToggleTile(
@@ -133,8 +162,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'PDF, DOC, TXT',
             Icons.description_rounded,
             Colors.green,
-            _scanDocuments,
-            (value) => setState(() => _scanDocuments = value),
+            _settings.scanDocuments,
+            (value) => _update(_settings.copyWith(scanDocuments: value)),
           ),
           _buildDivider(),
           _buildToggleTile(
@@ -142,8 +171,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'ZIP, RAR, 7Z',
             Icons.folder_zip_rounded,
             Colors.amber,
-            _scanArchives,
-            (value) => setState(() => _scanArchives = value),
+            _settings.scanArchives,
+            (value) => _update(_settings.copyWith(scanArchives: value)),
           ),
         ],
       ),
@@ -177,7 +206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: const Color(0xFF4A9EFF),
+        activeThumbColor: const Color(0xFF4A9EFF),
       ),
     );
   }
@@ -208,7 +237,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(color: Colors.white),
               ),
               Text(
-                _formatSize(_minFileSize),
+                _formatSize(_settings.minFileSize),
                 style: const TextStyle(
                   color: Color(0xFF4A9EFF),
                   fontWeight: FontWeight.bold,
@@ -217,13 +246,121 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           Slider(
-            value: _minFileSize.toDouble(),
+            value: _settings.minFileSize.toDouble(),
             min: 0,
-            max: 1024 * 1024, // 1MB
+            max: 1024 * 1024,
             divisions: 20,
             activeColor: const Color(0xFF4A9EFF),
             inactiveColor: const Color(0xFF0F1724),
-            onChanged: (value) => setState(() => _minFileSize = value.toInt()),
+            onChanged: (value) =>
+                _update(_settings.copyWith(minFileSize: value.toInt())),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLargeFileOptions() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A2538),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Minimum large file size',
+                style: TextStyle(color: Colors.white),
+              ),
+              Text(
+                _formatSize(_settings.largeFileMinSize),
+                style: const TextStyle(
+                  color: Color(0xFFF59E0B),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: _settings.largeFileMinSize.toDouble().clamp(
+              10.0 * 1024 * 1024,
+              200.0 * 1024 * 1024,
+            ),
+            min: 10 * 1024 * 1024,
+            max: 200 * 1024 * 1024,
+            divisions: 19,
+            activeColor: const Color(0xFFF59E0B),
+            inactiveColor: const Color(0xFF0F1724),
+            onChanged: (value) =>
+                _update(_settings.copyWith(largeFileMinSize: value.toInt())),
+          ),
+          Text(
+            'Only files this size or larger appear in Large Files',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUnusedOptions() {
+    const options = [30, 90, 180, 365];
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A2538),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Not used for at least',
+            style: TextStyle(color: Colors.white),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: options.map((days) {
+              final selected = _settings.unusedDays == days;
+              return GestureDetector(
+                onTap: () => _update(_settings.copyWith(unusedDays: days)),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? const Color(0xFF14B8A6).withValues(alpha: 0.2)
+                        : const Color(0xFF0F1724),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected
+                          ? const Color(0xFF14B8A6)
+                          : Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: Text(
+                    days == 365 ? '1 year' : '$days days',
+                    style: TextStyle(
+                      color: selected
+                          ? const Color(0xFF14B8A6)
+                          : Colors.white.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -242,15 +379,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           style: TextStyle(color: Colors.white),
         ),
         subtitle: Text(
-          'Automatically select older duplicates for deletion',
+          'Keep the newest copy and select older duplicates for deletion',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.4),
             fontSize: 12,
           ),
         ),
-        value: _autoSelectOldest,
-        onChanged: (value) => setState(() => _autoSelectOldest = value),
-        activeColor: const Color(0xFF4A9EFF),
+        value: _settings.autoSelectOldest,
+        onChanged: (value) =>
+            _update(_settings.copyWith(autoSelectOldest: value)),
+        activeThumbColor: const Color(0xFF4A9EFF),
       ),
     );
   }
@@ -267,9 +405,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           _buildAboutRow('Version', '1.0.0'),
           const SizedBox(height: 12),
-          _buildAboutRow('Developer', 'Your Name'),
-          const SizedBox(height: 12),
-          _buildAboutRow('Contact', 'your@email.com'),
+          _buildAboutRow('Application ID', 'com.duplicatefilefinder.app'),
         ],
       ),
     );
@@ -285,9 +421,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             color: Colors.white.withValues(alpha: 0.5),
           ),
         ),
-        Text(
-          value,
-          style: const TextStyle(color: Colors.white),
+        Flexible(
+          child: Text(
+            value,
+            style: const TextStyle(color: Colors.white),
+            textAlign: TextAlign.right,
+          ),
         ),
       ],
     );

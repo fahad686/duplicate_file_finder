@@ -1,11 +1,14 @@
 import 'dart:io';
 
+import 'file_types.dart';
+
 class DuplicateFile {
   final String path;
   final String name;
   final String extension;
   final int size;
   final DateTime lastModified;
+  final DateTime lastAccessed;
   final String hash;
   bool isSelected;
 
@@ -15,9 +18,10 @@ class DuplicateFile {
     required this.extension,
     required this.size,
     required this.lastModified,
+    DateTime? lastAccessed,
     required this.hash,
     this.isSelected = false,
-  });
+  }) : lastAccessed = lastAccessed ?? lastModified;
 
   File get file => File(path);
 
@@ -30,12 +34,14 @@ class DuplicateFile {
     return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
-  bool get isImage => ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
-      .contains(extension.toLowerCase());
-  bool get isVideo => ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv']
-      .contains(extension.toLowerCase());
-  bool get isAudio => ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma']
-      .contains(extension.toLowerCase());
+  bool get isImage => FileTypes.images.contains(extension.toLowerCase());
+  bool get isVideo => FileTypes.videos.contains(extension.toLowerCase());
+  bool get isAudio => FileTypes.audio.contains(extension.toLowerCase());
+
+  DateTime get lastUsed =>
+      lastAccessed.isAfter(lastModified) ? lastAccessed : lastModified;
+
+  int get daysUnused => DateTime.now().difference(lastUsed).inDays;
 }
 
 class DuplicateGroup {
