@@ -6,6 +6,34 @@ import 'package:path/path.dart' as p;
 
 import '../models/duplicate_file.dart';
 
+class DeleteProgress {
+  final int completed;
+  final int total;
+  final String currentFile;
+
+  const DeleteProgress({
+    required this.completed,
+    required this.total,
+    required this.currentFile,
+  });
+
+  double get fraction => total == 0 ? 0 : completed / total;
+}
+
+class DeleteResult {
+  final List<DuplicateFile> deletedFiles;
+  final int freedBytes;
+  final int attemptedCount;
+
+  const DeleteResult({
+    required this.deletedFiles,
+    required this.freedBytes,
+    required this.attemptedCount,
+  });
+
+  int get failedCount => attemptedCount - deletedFiles.length;
+}
+
 class ScanProgress {
   final int filesScanned;
   final int duplicatesFound;
@@ -45,10 +73,7 @@ class FileScannerService {
     List<String>? fileExtensions,
     int? minFileSize,
   }) {
-    _excludedDirs = [
-      ...androidExcludedDirs,
-      ...?excludedDirs,
-    ];
+    _excludedDirs = [...androidExcludedDirs, ...?excludedDirs];
     _fileExtensions = fileExtensions ?? [];
     _minFileSize = minFileSize ?? 0;
   }
@@ -273,23 +298,41 @@ class FileScannerService {
     return false;
   }
 
-  Future<int> deleteFiles(List<DuplicateFile> files) async {
+  Future<DeleteResult> deleteFiles(
+    List<DuplicateFile> files, {
+    void Function(DeleteProgress progress)? onProgress,
+  }) async {
     int freedBytes = 0;
+    final deletedFiles = <DuplicateFile>[];
 
-    for (final file in files) {
+    for (var index = 0; index < files.length; index++) {
+      final file = files[index];
       try {
         final f = File(file.path);
         if (await f.exists()) {
           final stat = await f.stat();
           await f.delete();
           freedBytes += stat.size;
+          deletedFiles.add(file);
         }
       } catch (_) {
-        continue;
+        // Keep failed files in the results so the user can retry.
       }
+
+      onProgress?.call(
+        DeleteProgress(
+          completed: index + 1,
+          total: files.length,
+          currentFile: file.name,
+        ),
+      );
     }
 
-    return freedBytes;
+    return DeleteResult(
+      deletedFiles: deletedFiles,
+      freedBytes: freedBytes,
+      attemptedCount: files.length,
+    );
   }
 
   void dispose() {

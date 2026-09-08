@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/duplicate_file.dart';
 import '../models/file_types.dart';
 import '../services/file_scanner_service.dart';
+import '../widgets/deletion_progress_dialog.dart';
 import '../widgets/duplicate_group_card.dart';
+import '../widgets/file_filter_bar.dart';
 
 class ResultsScreen extends StatefulWidget {
   final List<DuplicateGroup> duplicateGroups;
@@ -23,6 +26,9 @@ class _ResultsScreenState extends State<ResultsScreen> {
   final FileScannerService _scanner = FileScannerService();
 
   final Set<String> _activeFilters = {};
+  String? _selectedFolder;
+  int? _modifiedWithinDays;
+  FileSortOption _sort = FileSortOption.largest;
 
   @override
   void dispose() {
@@ -74,18 +80,78 @@ class _ResultsScreenState extends State<ResultsScreen> {
   }
 
   List<DuplicateGroup> get _filteredGroups {
-    if (_activeFilters.isEmpty) return widget.duplicateGroups;
+    final cutoff = _modifiedWithinDays == null
+        ? null
+        : DateTime.now().subtract(Duration(days: _modifiedWithinDays!));
 
-    return widget.duplicateGroups.where((group) {
+    final groups = widget.duplicateGroups.where((group) {
       return group.files.any((file) {
-        for (final filter in _activeFilters) {
-          final filterData = _filterTypes.firstWhere((f) => f['key'] == filter);
-          final exts = filterData['exts'] as List<String>;
-          if (exts.contains(file.extension.toLowerCase())) return true;
+        if (_activeFilters.isNotEmpty) {
+          var matchesType = false;
+          for (final filter in _activeFilters) {
+            final filterData = _filterTypes.firstWhere(
+              (item) => item['key'] == filter,
+            );
+            final exts = filterData['exts'] as List<String>;
+            if (exts.contains(file.extension.toLowerCase())) {
+              matchesType = true;
+              break;
+            }
+          }
+          if (!matchesType) return false;
         }
-        return false;
+
+        if (_selectedFolder != null &&
+            p.dirname(file.path) != _selectedFolder) {
+          return false;
+        }
+        if (cutoff != null && file.lastModified.isBefore(cutoff)) return false;
+        return true;
       });
     }).toList();
+
+    groups.sort((a, b) {
+      return switch (_sort) {
+        FileSortOption.newest => _newestDate(b).compareTo(_newestDate(a)),
+        FileSortOption.oldest => _oldestDate(a).compareTo(_oldestDate(b)),
+        FileSortOption.largest => b.wastedSize.compareTo(a.wastedSize),
+        FileSortOption.smallest => a.wastedSize.compareTo(b.wastedSize),
+        FileSortOption.folder =>
+          p
+              .dirname(a.files.first.path)
+              .compareTo(p.dirname(b.files.first.path)),
+      };
+    });
+    return groups;
+  }
+
+  List<String> get _folders =>
+      widget.duplicateGroups
+          .expand((group) => group.files)
+          .map((file) => p.dirname(file.path))
+          .toSet()
+          .toList()
+        ..sort();
+
+  DateTime _newestDate(DuplicateGroup group) => group.files
+      .map((file) => file.lastModified)
+      .reduce((a, b) => a.isAfter(b) ? a : b);
+
+  DateTime _oldestDate(DuplicateGroup group) => group.files
+      .map((file) => file.lastModified)
+      .reduce((a, b) => a.isBefore(b) ? a : b);
+
+  bool get _hasFilters =>
+      _activeFilters.isNotEmpty ||
+      _selectedFolder != null ||
+      _modifiedWithinDays != null;
+
+  void _clearFilters() {
+    setState(() {
+      _activeFilters.clear();
+      _selectedFolder = null;
+      _modifiedWithinDays = null;
+    });
   }
 
   int get _totalDuplicates =>
@@ -155,11 +221,12 @@ class _ResultsScreenState extends State<ResultsScreen> {
   }
 
   int _countForFilter(String key) {
-    final exts = _filterTypes
-        .firstWhere((f) => f['key'] == key)['exts'] as List<String>;
+    final exts =
+        _filterTypes.firstWhere((f) => f['key'] == key)['exts'] as List<String>;
     return widget.duplicateGroups
-        .where((g) =>
-            g.files.any((f) => exts.contains(f.extension.toLowerCase())))
+        .where(
+          (g) => g.files.any((f) => exts.contains(f.extension.toLowerCase())),
+        )
         .fold(0, (sum, g) => sum + g.duplicateCount);
   }
 
@@ -191,36 +258,59 @@ class _ResultsScreenState extends State<ResultsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Colors.red),
-            ),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
 
     final selectedFiles = widget.duplicateGroups
         .expand((g) => g.files)
         .where((f) => f.isSelected)
         .toList();
 
-    final freedBytes = await _scanner.deleteFiles(selectedFiles);
+    final progress = ValueNotifier(
+      DeleteProgress(
+        completed: 0,
+        total: selectedFiles.length,
+        currentFile: 'Preparing...',
+      ),
+    );
+    final dialogFuture = showDeletionProgressDialog(context, progress);
 
+    final result = await _scanner.deleteFiles(
+      selectedFiles,
+      onProgress: (value) => progress.value = value,
+    );
+
+    if (!mounted) {
+      progress.dispose();
+      return;
+    }
+
+    Navigator.of(context, rootNavigator: true).pop();
+    await dialogFuture;
+    progress.dispose();
+
+    final deletedPaths = result.deletedFiles.map((file) => file.path).toSet();
+    setState(() {
+      for (final group in widget.duplicateGroups) {
+        group.files.removeWhere((file) => deletedPaths.contains(file.path));
+      }
+      widget.duplicateGroups.removeWhere((group) => group.files.length < 2);
+    });
+
+    final failureMessage = result.failedCount == 0
+        ? ''
+        : ' · ${result.failedCount} could not be deleted';
     if (mounted) {
-      setState(() {
-        for (final group in widget.duplicateGroups) {
-          group.files.removeWhere((f) => f.isSelected);
-        }
-        widget.duplicateGroups.removeWhere((g) => g.files.length < 2);
-      });
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Deleted ${selectedFiles.length} files, freed ${_formatSize(freedBytes)}',
+            'Deleted ${result.deletedFiles.length} files, freed '
+            '${_formatSize(result.freedBytes)}$failureMessage',
           ),
         ),
       );
@@ -237,6 +327,18 @@ class _ResultsScreenState extends State<ResultsScreen> {
             _buildHeader(),
             _buildStatsBar(),
             _buildFilterGrid(),
+            FileFilterBar(
+              folders: _folders,
+              selectedFolder: _selectedFolder,
+              modifiedWithinDays: _modifiedWithinDays,
+              sort: _sort,
+              onFolderChanged: (folder) =>
+                  setState(() => _selectedFolder = folder),
+              onDateChanged: (days) =>
+                  setState(() => _modifiedWithinDays = days),
+              onSortChanged: (sort) => setState(() => _sort = sort),
+              onClear: _clearFilters,
+            ),
             Expanded(
               child: _filteredGroups.isEmpty
                   ? _buildEmptyState()
@@ -268,9 +370,9 @@ class _ResultsScreenState extends State<ResultsScreen> {
               ),
             ),
           ),
-          if (_activeFilters.isNotEmpty)
+          if (_hasFilters)
             TextButton(
-              onPressed: () => setState(() => _activeFilters.clear()),
+              onPressed: _clearFilters,
               child: const Text('Clear Filters'),
             ),
           if (_filteredGroups.isNotEmpty)
@@ -404,11 +506,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
                     ),
                   ),
                   if (isActive)
-                    Icon(
-                      Icons.check_circle_rounded,
-                      color: color,
-                      size: 18,
-                    ),
+                    Icon(Icons.check_circle_rounded, color: color, size: 18),
                 ],
               ),
             ),
@@ -434,9 +532,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            _activeFilters.isEmpty
-                ? 'No Duplicates Found'
-                : 'No Matches',
+            _activeFilters.isEmpty ? 'No Duplicates Found' : 'No Matches',
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -448,10 +544,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
             _activeFilters.isEmpty
                 ? 'Your device is clean!'
                 : 'Try removing some filters',
-            style: const TextStyle(
-              fontSize: 13,
-              color: Color(0xFF6B7A94),
-            ),
+            style: const TextStyle(fontSize: 13, color: Color(0xFF6B7A94)),
           ),
         ],
       ),
@@ -514,10 +607,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFEF4444),
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),

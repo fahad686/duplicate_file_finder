@@ -9,12 +9,13 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private val channelName = "com.duplicatefilefinder.app/permissions"
+    private val permissionsChannel = "com.duplicatefilefinder.app/permissions"
+    private val securityChannel = "com.duplicatefilefinder.app/security"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, permissionsChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "openAllFilesAccessSettings" -> {
@@ -25,6 +26,39 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, securityChannel)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "runSecurityScan" -> result.success(SecurityScanner(this).run())
+                    "openSettings" -> {
+                        openSecuritySettings(call.arguments as? String)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    private fun openSecuritySettings(action: String?) {
+        val intent = when (action) {
+            "developer" -> Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+            "accessibility" -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            "overlay" -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+            "notification" -> Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+            "vpn" -> Intent(Settings.ACTION_VPN_SETTINGS)
+            "security" -> Intent(Settings.ACTION_SECURITY_SETTINGS)
+            "wireless" -> Intent(Settings.ACTION_WIRELESS_SETTINGS)
+            else -> Intent(Settings.ACTION_SETTINGS)
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            val fallback = Intent(Settings.ACTION_SETTINGS)
+            fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(fallback)
+        }
     }
 
     private fun openAllFilesAccessSettings() {

@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/scan_mode.dart';
 import 'scanning_screen.dart';
+import 'security_check_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -174,6 +175,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildMainScanArea(size),
                     const SizedBox(height: 20),
                     _buildToolCards(),
+                    const SizedBox(height: 12),
+                    _buildSecurityCard(),
                     const SizedBox(height: 36),
                     _buildInfoCards(),
                   ],
@@ -365,6 +368,74 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildSecurityCard() {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const SecurityCheckScreen()),
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF131B2A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFF22C55E).withValues(alpha: 0.25),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.shield_rounded,
+                color: Color(0xFF22C55E),
+                size: 26,
+              ),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Phone Security',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Check if this phone looks bugged or unsafe',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF6B7A94),
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFF6B7A94),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

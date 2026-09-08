@@ -5,6 +5,8 @@
     <!-- Android 11+: required to scan documents/archives outside the media store.
          Play Console: declare All files access / file-manager use. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    <!-- Used by Phone Security to review installed apps for spyware-style permissions. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
 
     <application
         android:label="Duplicate Finder"

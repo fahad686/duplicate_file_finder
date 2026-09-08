@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:open_file/open_file.dart';
 
 import '../models/duplicate_file.dart';
+import '../widgets/media_thumbnail.dart';
 import 'media_player_screen.dart';
 
 class FileDetailScreen extends StatelessWidget {
@@ -102,8 +103,11 @@ class FileDetailScreen extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.zoom_in_rounded,
-                      color: Colors.white70, size: 16),
+                  const Icon(
+                    Icons.zoom_in_rounded,
+                    color: Colors.white70,
+                    size: 16,
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     'Tap to view full screen',
@@ -121,42 +125,11 @@ class FileDetailScreen extends StatelessWidget {
     }
 
     if (file.isVideo) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Container(
-            color: const Color(0xFF1A1030),
-            child: const Center(
-              child: Icon(
-                Icons.videocam_rounded,
-                size: 64,
-                color: Color(0xFF8B5CF6),
-              ),
-            ),
-          ),
-          Container(color: Colors.black.withValues(alpha: 0.25)),
-          Center(
-            child: Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                color: const Color(0xFF8B5CF6).withValues(alpha: 0.9),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.4),
-                    blurRadius: 20,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.play_arrow_rounded,
-                size: 34,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
+      return MediaThumbnail(
+        file: file,
+        width: double.infinity,
+        height: 220,
+        borderRadius: 0,
       );
     }
 
@@ -184,8 +157,10 @@ class FileDetailScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
@@ -193,13 +168,15 @@ class FileDetailScreen extends StatelessWidget {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.play_arrow_rounded,
-                          color: Colors.white, size: 16),
+                      Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
                       SizedBox(width: 4),
                       Text(
                         'Tap to play',
-                        style:
-                            TextStyle(color: Colors.white, fontSize: 12),
+                        style: TextStyle(color: Colors.white, fontSize: 12),
                       ),
                     ],
                   ),
@@ -286,9 +263,10 @@ class FileDetailScreen extends StatelessWidget {
             DateFormat('MMM d, y HH:mm').format(file.lastModified),
           ),
           const SizedBox(height: 10),
-          _buildInfoRow('Hash', file.hash.length >= 16
-              ? file.hash.substring(0, 16)
-              : file.hash),
+          _buildInfoRow(
+            'Hash',
+            file.hash.length >= 16 ? file.hash.substring(0, 16) : file.hash,
+          ),
           const SizedBox(height: 10),
           _buildInfoRow('Path', file.path),
         ],
@@ -338,16 +316,16 @@ class FileDetailScreen extends StatelessWidget {
                 file.isAudio
                     ? Icons.play_circle_rounded
                     : file.isVideo
-                        ? Icons.play_circle_filled_rounded
-                        : Icons.fullscreen_rounded,
+                    ? Icons.play_circle_filled_rounded
+                    : Icons.fullscreen_rounded,
                 size: 20,
               ),
               label: Text(
                 file.isAudio
                     ? 'Play Audio'
                     : file.isVideo
-                        ? 'Play Video'
-                        : 'View Image',
+                    ? 'Play Video'
+                    : 'View Image',
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _getAccentColor(),

@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
 
@@ -8,6 +7,9 @@ import '../models/duplicate_file.dart';
 import '../models/file_types.dart';
 import '../models/scan_mode.dart';
 import '../services/file_scanner_service.dart';
+import '../widgets/deletion_progress_dialog.dart';
+import '../widgets/file_filter_bar.dart';
+import '../widgets/media_thumbnail.dart';
 import 'file_detail_screen.dart';
 import 'media_player_screen.dart';
 
@@ -15,11 +17,7 @@ class FileListScreen extends StatefulWidget {
   final ScanMode mode;
   final List<DuplicateFile> files;
 
-  const FileListScreen({
-    super.key,
-    required this.mode,
-    required this.files,
-  });
+  const FileListScreen({super.key, required this.mode, required this.files});
 
   @override
   State<FileListScreen> createState() => _FileListScreenState();
@@ -29,6 +27,9 @@ class _FileListScreenState extends State<FileListScreen> {
   final FileScannerService _scanner = FileScannerService();
   final Set<String> _activeFilters = {};
   late List<DuplicateFile> _files;
+  String? _selectedFolder;
+  int? _modifiedWithinDays;
+  FileSortOption _sort = FileSortOption.newest;
 
   static const _filterTypes = [
     {
@@ -74,16 +75,55 @@ class _FileListScreenState extends State<FileListScreen> {
   }
 
   List<DuplicateFile> get _filteredFiles {
-    if (_activeFilters.isEmpty) return _files;
-    return _files.where((file) {
-      for (final filter in _activeFilters) {
-        final filterData = _filterTypes.firstWhere((f) => f['key'] == filter);
-        final exts = filterData['exts'] as List<String>;
-        if (exts.contains(file.extension.toLowerCase())) return true;
+    final cutoff = _modifiedWithinDays == null
+        ? null
+        : DateTime.now().subtract(Duration(days: _modifiedWithinDays!));
+
+    final files = _files.where((file) {
+      if (_activeFilters.isNotEmpty) {
+        var matchesType = false;
+        for (final filter in _activeFilters) {
+          final filterData = _filterTypes.firstWhere((f) => f['key'] == filter);
+          final exts = filterData['exts'] as List<String>;
+          if (exts.contains(file.extension.toLowerCase())) {
+            matchesType = true;
+            break;
+          }
+        }
+        if (!matchesType) return false;
       }
-      return false;
+
+      if (_selectedFolder != null && p.dirname(file.path) != _selectedFolder) {
+        return false;
+      }
+
+      final date = widget.mode == ScanMode.unusedFiles
+          ? file.lastUsed
+          : file.lastModified;
+      if (cutoff != null && date.isBefore(cutoff)) return false;
+      return true;
     }).toList();
+
+    files.sort((a, b) {
+      final aDate = widget.mode == ScanMode.unusedFiles
+          ? a.lastUsed
+          : a.lastModified;
+      final bDate = widget.mode == ScanMode.unusedFiles
+          ? b.lastUsed
+          : b.lastModified;
+      return switch (_sort) {
+        FileSortOption.newest => bDate.compareTo(aDate),
+        FileSortOption.oldest => aDate.compareTo(bDate),
+        FileSortOption.largest => b.size.compareTo(a.size),
+        FileSortOption.smallest => a.size.compareTo(b.size),
+        FileSortOption.folder => p.dirname(a.path).compareTo(p.dirname(b.path)),
+      };
+    });
+    return files;
   }
+
+  List<String> get _folders =>
+      _files.map((file) => p.dirname(file.path)).toSet().toList()..sort();
 
   int get _selectedCount => _files.where((f) => f.isSelected).length;
 
@@ -120,8 +160,8 @@ class _FileListScreenState extends State<FileListScreen> {
   }
 
   int _countForFilter(String key) {
-    final exts = _filterTypes
-        .firstWhere((f) => f['key'] == key)['exts'] as List<String>;
+    final exts =
+        _filterTypes.firstWhere((f) => f['key'] == key)['exts'] as List<String>;
     return _files.where((f) => exts.contains(f.extension.toLowerCase())).length;
   }
 
@@ -133,7 +173,10 @@ class _FileListScreenState extends State<FileListScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A2538),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Delete Files', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Delete Files',
+          style: TextStyle(color: Colors.white),
+        ),
         content: Text(
           'Delete $_selectedCount files (${_formatSize(_selectedSize)})?',
           style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
@@ -151,23 +194,50 @@ class _FileListScreenState extends State<FileListScreen> {
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
 
     final selectedFiles = _files.where((f) => f.isSelected).toList();
-    final freedBytes = await _scanner.deleteFiles(selectedFiles);
-
-    if (!mounted) return;
-    setState(() {
-      _files.removeWhere((f) => f.isSelected);
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Deleted ${selectedFiles.length} files, freed ${_formatSize(freedBytes)}',
-        ),
+    final progress = ValueNotifier(
+      DeleteProgress(
+        completed: 0,
+        total: selectedFiles.length,
+        currentFile: 'Preparing...',
       ),
     );
+    final dialogFuture = showDeletionProgressDialog(context, progress);
+
+    final result = await _scanner.deleteFiles(
+      selectedFiles,
+      onProgress: (value) => progress.value = value,
+    );
+
+    if (!mounted) {
+      progress.dispose();
+      return;
+    }
+
+    Navigator.of(context, rootNavigator: true).pop();
+    await dialogFuture;
+    progress.dispose();
+
+    final deletedPaths = result.deletedFiles.map((file) => file.path).toSet();
+    setState(() {
+      _files.removeWhere((file) => deletedPaths.contains(file.path));
+    });
+
+    final failureMessage = result.failedCount == 0
+        ? ''
+        : ' · ${result.failedCount} could not be deleted';
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Deleted ${result.deletedFiles.length} files, freed '
+            '${_formatSize(result.freedBytes)}$failureMessage',
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -180,6 +250,22 @@ class _FileListScreenState extends State<FileListScreen> {
             _buildHeader(),
             _buildStatsBar(),
             _buildFilterGrid(),
+            FileFilterBar(
+              folders: _folders,
+              selectedFolder: _selectedFolder,
+              modifiedWithinDays: _modifiedWithinDays,
+              sort: _sort,
+              onFolderChanged: (folder) =>
+                  setState(() => _selectedFolder = folder),
+              onDateChanged: (days) =>
+                  setState(() => _modifiedWithinDays = days),
+              onSortChanged: (sort) => setState(() => _sort = sort),
+              onClear: () => setState(() {
+                _activeFilters.clear();
+                _selectedFolder = null;
+                _modifiedWithinDays = null;
+              }),
+            ),
             Expanded(
               child: _filteredFiles.isEmpty
                   ? _buildEmptyState()
@@ -381,63 +467,108 @@ class _FileListScreenState extends State<FileListScreen> {
 
   Widget _buildFileTile(DuplicateFile file) {
     final folderName = p.basename(p.dirname(file.path));
-    final subtitle = widget.mode == ScanMode.unusedFiles
-        ? '${file.daysUnused} days unused · ${file.sizeFormatted}'
-        : '$folderName · ${file.sizeFormatted}';
+    final date = widget.mode == ScanMode.unusedFiles
+        ? file.lastUsed
+        : file.lastModified;
+    final dateLabel = DateFormat('MMM d, y · h:mm a').format(date);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: file.isSelected
             ? const Color(0xFFEF4444).withValues(alpha: 0.08)
             : const Color(0xFF131B2A),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Checkbox(
-            value: file.isSelected,
-            onChanged: (value) {
-              setState(() => file.isSelected = value ?? false);
-            },
-            activeColor: const Color(0xFFEF4444),
-            checkColor: Colors.white,
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-          ),
-          _buildThumbnail(file),
-          const SizedBox(width: 10),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _openFile(file),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    file.name,
-                    style: const TextStyle(fontSize: 13, color: Colors.white),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.white.withValues(alpha: 0.4),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+          GestureDetector(
+            onTap: () => _openFile(file),
+            child: MediaThumbnail(
+              file: file,
+              width: 112,
+              height: 88,
+              borderRadius: 10,
             ),
           ),
-          IconButton(
-            onPressed: () => _openFile(file),
-            icon: Icon(
-              Icons.open_in_new_rounded,
-              size: 16,
-              color: Colors.white.withValues(alpha: 0.25),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        file.name,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Checkbox(
+                      value: file.isSelected,
+                      onChanged: (value) {
+                        setState(() => file.isSelected = value ?? false);
+                      },
+                      activeColor: const Color(0xFFEF4444),
+                      checkColor: Colors.white,
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.folder_rounded,
+                      size: 13,
+                      color: Color(0xFF6B7A94),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        folderName,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF8B9AB5),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  dateLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.4),
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    _infoTag(file.sizeFormatted),
+                    _infoTag(file.extension.toUpperCase()),
+                    if (widget.mode == ScanMode.unusedFiles)
+                      _infoTag('${file.daysUnused} days unused'),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -445,44 +576,17 @@ class _FileListScreenState extends State<FileListScreen> {
     );
   }
 
-  Widget _buildThumbnail(DuplicateFile file) {
-    if (file.isImage) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: Image.file(
-          File(file.path),
-          width: 42,
-          height: 42,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _fallbackIcon(file),
-        ),
-      );
-    }
-    return _fallbackIcon(file);
-  }
-
-  Widget _fallbackIcon(DuplicateFile file) {
-    Color color = const Color(0xFF6B7A94);
-    IconData icon = Icons.insert_drive_file_rounded;
-    if (file.isVideo) {
-      color = const Color(0xFF8B5CF6);
-      icon = Icons.videocam_rounded;
-    } else if (file.isAudio) {
-      color = const Color(0xFFF59E0B);
-      icon = Icons.audiotrack_rounded;
-    } else if (file.isImage) {
-      color = const Color(0xFF3B82F6);
-      icon = Icons.image_rounded;
-    }
-
+  Widget _infoTag(String text) {
     return Container(
-      width: 42,
-      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(4),
       ),
-      child: Icon(icon, color: color, size: 20),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 10, color: Color(0xFF8B9AB5)),
+      ),
     );
   }
 
@@ -508,9 +612,7 @@ class _FileListScreenState extends State<FileListScreen> {
   Widget _buildDeleteBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      decoration: const BoxDecoration(
-        color: Color(0xFF131B2A),
-      ),
+      decoration: const BoxDecoration(color: Color(0xFF131B2A)),
       child: Row(
         children: [
           Expanded(
@@ -528,7 +630,10 @@ class _FileListScreenState extends State<FileListScreen> {
                 ),
                 Text(
                   '${_formatSize(_selectedSize)} will be freed',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF6B7A94)),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7A94),
+                  ),
                 ),
               ],
             ),

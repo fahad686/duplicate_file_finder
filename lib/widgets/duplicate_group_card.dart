@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
 
@@ -8,6 +7,7 @@ import '../models/duplicate_file.dart';
 import '../models/file_types.dart';
 import '../screens/file_detail_screen.dart';
 import '../screens/media_player_screen.dart';
+import 'media_thumbnail.dart';
 
 class DuplicateGroupCard extends StatefulWidget {
   final DuplicateGroup group;
@@ -37,9 +37,7 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
       decoration: BoxDecoration(
         color: const Color(0xFF131B2A),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.05),
-        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,36 +107,16 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
 
   Widget _buildGroupThumbnail() {
     final firstFile = widget.group.files.first;
-    if (firstFile.isImage) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.file(
-          File(firstFile.path),
-          width: 48,
-          height: 48,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _buildFallbackIcon(firstFile),
-        ),
-      );
-    }
-    return _buildFallbackIcon(firstFile);
-  }
-
-  Widget _buildFallbackIcon(DuplicateFile file) {
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: _getFileTypeColor().withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Icon(_getFileTypeIcon(), color: _getFileTypeColor(), size: 24),
+    return MediaThumbnail(
+      file: firstFile,
+      width: 76,
+      height: 64,
+      borderRadius: 10,
     );
   }
 
   Widget _buildGroupInfo() {
-    final selectedCount =
-        widget.group.files.where((f) => f.isSelected).length;
+    final selectedCount = widget.group.files.where((f) => f.isSelected).length;
     final extension = widget.group.files.first.extension;
 
     return Container(
@@ -199,12 +177,15 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
     final folderName = p.basename(p.dirname(file.path));
     final parentFolder = p.basename(p.dirname(p.dirname(file.path)));
     final folderDisplay = '$parentFolder/$folderName';
+    final dateLabel = DateFormat('MMM d, y').format(file.lastModified);
 
     return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       color: file.isSelected
           ? const Color(0xFFEF4444).withValues(alpha: 0.06)
           : Colors.transparent,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Checkbox(
             value: file.isSelected,
@@ -221,7 +202,7 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
             visualDensity: VisualDensity.compact,
           ),
           _buildTileThumbnail(file),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -254,11 +235,20 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Row(
+                const SizedBox(height: 5),
+                Text(
+                  dateLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.35),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
                   children: [
                     _buildInfoTag(file.sizeFormatted),
-                    const SizedBox(width: 6),
                     _buildInfoTag(file.extension.toUpperCase()),
                   ],
                 ),
@@ -317,36 +307,9 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
   }
 
   Widget _buildTileThumbnail(DuplicateFile file) {
-    if (file.isImage) {
-      return Padding(
-        padding: const EdgeInsets.only(left: 4),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: Image.file(
-            File(file.path),
-            width: 42,
-            height: 42,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => _buildSmallFallback(file),
-          ),
-        ),
-      );
-    }
     return Padding(
       padding: const EdgeInsets.only(left: 4),
-      child: _buildSmallFallback(file),
-    );
-  }
-
-  Widget _buildSmallFallback(DuplicateFile file) {
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        color: _getFileTypeColor().withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Icon(_getFileTypeIcon(), color: _getFileTypeColor(), size: 20),
+      child: MediaThumbnail(file: file, width: 88, height: 72, borderRadius: 8),
     );
   }
 
@@ -359,15 +322,5 @@ class _DuplicateGroupCardState extends State<DuplicateGroupCard> {
     if (FileTypes.archives.contains(ext)) return const Color(0xFFF59E0B);
     if (FileTypes.documents.contains(ext)) return const Color(0xFF10B981);
     return const Color(0xFF6B7A94);
-  }
-
-  IconData _getFileTypeIcon() {
-    final ext = widget.group.files.first.extension.toLowerCase();
-    if (FileTypes.images.contains(ext)) return Icons.image_rounded;
-    if (FileTypes.videos.contains(ext)) return Icons.videocam_rounded;
-    if (FileTypes.audio.contains(ext)) return Icons.audiotrack_rounded;
-    if (ext == '.pdf') return Icons.picture_as_pdf_rounded;
-    if (FileTypes.archives.contains(ext)) return Icons.folder_zip_rounded;
-    return Icons.insert_drive_file_rounded;
   }
 }
